@@ -1,9 +1,8 @@
 #!/bin/bash
 # Adrien, 2012-11
 
-# config
-username="adrienverge"
-password="%KIjiJI;"
+# Get the directory this script is stored in
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # used to create temp files
 date=$(date +%Y-%m-%d-%T)
@@ -12,6 +11,31 @@ debug=/tmp/kijiji-debug-$date
 
 function html_encode() {
 	echo -n $1 | perl -pe's/([^-_.~A-Za-z0-9])/sprintf("%%%02X", ord($1))/seg'
+}
+
+# Reads config file (file name given in argument)
+# This file should contain something like:
+# username=myaccountnameonkijiji
+# password=MyPaSsW0Rd
+function read_config() {
+	config_file=$1
+	[ -r "$config_file" ] || { echo "error: no config file found"; return 1; }
+
+	while read line; do
+		k=$(echo "$line" | cut -d'=' -f1)
+		v=$(echo "$line" | cut -d'=' -f2)
+		case "$k" in
+			username)	username="$v";;
+			password)	password="$v";;
+		esac
+	done < "$config_file"
+
+	if [ -z "$username" ] || [ -z "$password" ]; then
+		echo "error: username or password not found in config file"
+		return 1
+	fi
+
+	return 0
 }
 
 function sign_in() {
@@ -165,6 +189,8 @@ function list_ads() {
 function remove_ad() {
 	echo "TODO"
 }
+
+read_config "$script_dir/config"
 
 echo "=== kijiji API ==="
 echo "2012, Adrien Vergé"
