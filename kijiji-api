@@ -1,8 +1,9 @@
 #!/bin/bash
-# Adrien, 2012-11
+# Copyright 2012-2013 Adrien Vergé
 
 # Get the directory this script is stored in
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+script_file="${BASH_SOURCE[0]}"
+script_dir="$(cd "$(dirname "$script_file")" && pwd)"
 
 # used to create temp files
 date=$(date +%Y-%m-%d-%T)
@@ -191,19 +192,3 @@ function remove_ad() {
 }
 
 read_config "$script_dir/config"
-
-echo "=== kijiji API ==="
-echo "2012, Adrien Vergé"
-echo ""
-echo "> source $0"
-echo ">"
-echo "> sign_in"
-echo "> post_image <img.jpg>"
-echo "> post_ad <advalues.txt> [FAKE]"
-echo "> list_ads"
-echo "> remove_ad <ad_id>"
-
-echo ""
-echo "example:"
-echo "> sign_in && post_image chambre.jpg && post_image salon.jpg && post_ad annonce-coloc.txt"
-
