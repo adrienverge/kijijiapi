@@ -3,12 +3,12 @@ Kijiji-API
 
 Robot to post ads on Kijiji.
 
-This set of bash functions allow you to automatically post ads on the
-[Kijiji] [1] advertisement community.
+This set of bash functions allow you to automatically post ads on
+the [Kijiji] [1] advertisement community.
 Using a crontab, you can program it to post your ad regularly and make sure
 more users will see it.
 
-[1]: http://www.kijiji.ca/  Kijiji
+[1]: http://www.kijiji.ca/  "Kijiji"
 
 Usage
 -----
@@ -47,7 +47,6 @@ featuredAdDuration=0
 Then, use the following functions to post your add:
 ```
 $ source kijiji-api
-
 $ sign_in
 $ post_image bike.jpg
 $ post_image lock.jpg
