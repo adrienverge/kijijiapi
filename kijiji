@@ -1,0 +1,183 @@
+#!/bin/bash
+# Adrien, 2012-11
+
+# config
+username="adrienverge"
+password="%KIjiJI;"
+
+# used to create temp files
+date=$(date +%Y-%m-%d-%T)
+tmpfile=/tmp/kijiji-tmpfile-$date
+debug=/tmp/kijiji-debug-$date
+
+function html_encode() {
+	echo -n $1 | perl -pe's/([^-_.~A-Za-z0-9])/sprintf("%%%02X", ord($1))/seg'
+}
+
+function sign_in() {
+	echo -n " [] Signing in... "
+	# first, get needed cookies
+	curl --output "$tmpfile-signin1" \
+		--cookie-jar "$tmpfile-cookies" \
+		--user-agent "Mozilla/5.0" \
+		--silent \
+		https://secure.kijiji.ca/montreal/s-SignIn
+	# then, sign in
+	post_val="rup=&ruq=&AdId=0&Mode=Normal&GreetingName=$(html_encode $username)&Password=$(html_encode $password)&Submit=Ouvrir%20une%20session"
+	curl --output "$tmpfile-signin2" \
+		--data "$post_val" \
+		--cookie "$tmpfile-cookies" \
+		--cookie-jar "$tmpfile-cookies" \
+		--user-agent "Mozilla/5.0" \
+		--location \
+		--silent \
+		https://secure.kijiji.ca/montreal/s-SignIn
+	grep "Fermer la session" "$tmpfile-signin2" > /dev/null
+	if [ $? -eq 0 ]; then
+		echo "ok"
+		return 0
+	else
+		echo "failed"
+		return 1
+	fi
+}
+
+# ajoute des espaces de manière aléatoire pour éviter la reconnaissance automatique par Kijiji
+function randomize_spaces() {
+	content=$1
+	# first step : add spaces around <br>
+	content=$(echo "$description" | sed -e "s/\([^ ]\)</\1 </g;s/>\([^ ]\)/> \1/g")
+	# then, randomly multiply spaces
+	nb_spaces=$(echo "$content" | sed -e "s/ /\n/g" | wc -l)
+	((nb_spaces--))
+	pos=1
+	while [ $pos -lt $nb_spaces ]; do
+		a=$(($RANDOM % 5))
+		for ((i=0 ; $a - $i ; i++)); do
+			content=$(echo "$content" | sed -e "s/ /  /$pos")
+		done
+		pos=$((pos + a + 1))
+		nb_spaces=$((nb_spaces + a))
+	done
+	echo "$content"
+}
+
+global_ad_images=
+global_ad_thumbnails=
+
+function post_image() {
+	image=$1
+	image_name=$(basename $image)
+	echo -n " [] Posting image: $image... "
+	[ -e "$tmpfile-image" ] && rm "$tmpfile-image"
+	curl --output "$tmpfile-image" \
+		--user-agent "Shockwave Flash" --header "Cache-Control: no-cache" \
+		--header "Connection: Keep-Alive" --header "Expect:" \
+		-F "Filename=$image_name" \
+		-F "r=0" \
+		-F "a=1:913a6c0fec4f7a4f46321180f39d9e57ac9c8ff033971da0b9cfcccc45bef4e2" \
+		-F "v=k" \
+		-F "s=1C5000" \
+		-F "n=k" \
+		-F "b=18" \
+		-F "u=@$image;type=application/octet-stream" \
+		-F "Upload=Submit Query" \
+		--trace "$debug-trace" \
+		--silent \
+		http://api-p.classistatic.com/api/image/upload
+	if [ ! -e "$tmpfile-image" ]; then
+		echo "failed: could not post image, see $debug-trace"
+		return 1
+	fi
+	image_url=$(grep http "$tmpfile-image")
+	if [ -n "$image_url" ]; then
+		thumbnail_url=$(echo "$image_url" | sed -e "s/?.*$//;s/_18\(\.[A-Z]\+\)$/_14\1/")
+		[ -z "$global_ad_images" ] || global_ad_images="$global_ad_images,"
+		global_ad_images="$global_ad_images$image_url"
+		[ -z "$global_ad_thumbnails" ] || global_ad_thumbnails="$global_ad_thumbnails,"
+		global_ad_thumbnails="$global_ad_thumbnails$thumbnail_url"
+		echo "ok"
+		return 0
+	else
+		echo "failed"
+		return 1
+	fi
+}
+
+function post_ad() {
+	postvalues=$(cat $1)
+	[ -n "$2" ] && fake_it=1 || fake_it=0
+
+	echo -n " [] Posting ad... "
+
+	eventstartdate="$(date +%s)000"
+	eventenddate=$((eventstartdate + 23*60*60*1000))
+	#description=$(randomize_spaces "$description")
+
+	postvalues=${postvalues/\$eventstartdate/$eventstartdate}
+	postvalues=${postvalues/\$eventenddate/$eventenddate}
+	postvalues=${postvalues/\$global_ad_thumbnails/$global_ad_thumbnails}
+	postvalues=${postvalues/\$global_ad_images/$global_ad_images}
+	postvalues=$(echo -n "$postvalues" \
+		| perl -pe's/([^-_.~A-Za-z0-9])/sprintf("%%%02X", ord($1))/seg' \
+		| sed -e "s/%0A/\n/g" | sed -e "s/%3D/=/" \
+		| tr "\n" "&")
+
+	if [ $fake_it -eq 1 ]; then
+		echo "$http://montreal.kijiji.ca/c-PostAd"
+		echo "$postvalues"
+		return 0
+	fi
+
+	curl --output "$tmpfile-final" \
+		--cookie "$tmpfile-cookies" \
+		--cookie-jar "$tmpfile-cookies" \
+		--data "$postvalues" \
+		--location \
+		--user-agent "Mozilla/5.0" \
+		--header "Connection: Keep-Alive" --header "Expect:" \
+		--silent \
+		http://montreal.kijiji.ca/c-PostAd
+
+	grep "votre annonce est maintenant en ligne" "$tmpfile-final" > /dev/null
+	if [ $? -eq 0 ]; then
+		echo "ok"
+		grep "votre annonce est maintenant en ligne" "$tmpfile-final"
+		return 0
+	else
+		echo "failed"
+		echo "See $tmpfile-final"
+		return 1
+	fi
+}
+
+function list_ads() {
+	echo "TODO"
+	curl --output "$tmpfile-mykijiji" \
+		--cookie "$tmpfile-cookies" \
+		--cookie-jar "$tmpfile-cookies" \
+		--user-agent "Mozilla/5.0" \
+		--silent \
+		http://montreal.kijiji.ca/c-ManageMyAds
+	echo "$tmpfile-mykijiji"
+}
+
+function remove_ad() {
+	echo "TODO"
+}
+
+echo "=== kijiji API ==="
+echo "2012, Adrien Vergé"
+echo ""
+echo "> source $0"
+echo ">"
+echo "> sign_in"
+echo "> post_image <img.jpg>"
+echo "> post_ad <advalues.txt> [FAKE]"
+echo "> list_ads"
+echo "> remove_ad <ad_id>"
+
+echo ""
+echo "example:"
+echo "> sign_in && post_image chambre.jpg && post_image salon.jpg && post_ad annonce-coloc.txt"
+
