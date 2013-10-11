@@ -1,4 +1,4 @@
-Kijiji-API
+Kijiji API
 ==========
 
 Robot to post ads on Kijiji.
@@ -13,7 +13,7 @@ more users will see it.
 Usage
 -----
 
-First, store your Kijiji account username and password into the `config` file.
+First, store your Kijiji account username and password into the `config.ini` file.
 
 To configure the script to post a specific ad, you need to post it once on
 Kijiji and save the POST vars sent by your browser when posting:
@@ -44,11 +44,9 @@ AddressSelectedByUser=true
 featuredAdDuration=0
 ```
 
-Then, use the following functions to post your add:
+Then, use the following command to post your add:
 ```
-$ source kijiji-api
-$ sign_in
-$ post_image bike.jpg
-$ post_image lock.jpg
-$ post_ad post-vars.txt
+$ ./kijijiapi.py -i img1.jpg,img2.png post-vars.txt
 ```
+assuming that your images to join with the ad are `img1.jpg` and `img2.png`,
+and your POST vars are in `post-vars.txt`.
