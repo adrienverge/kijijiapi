@@ -22,6 +22,7 @@ import configparser
 import http.cookiejar
 import os
 import random
+import multipartformdataencoder
 import sys
 import urllib.request
 import urllib.parse
@@ -37,9 +38,10 @@ def randomize_spaces(input):
 	return output
 
 class KijijiAPIException(Exception):
-	def __init__(self, dump):
-		with open('/tmp/kijiji-api-dump', 'w') as dumpfile:
-			dumpfile.write(dump)
+	def __init__(self, dump=None):
+		if dump:
+			with open('/tmp/kijiji-api-dump', 'w') as dumpfile:
+				dumpfile.write(dump)
 
 	def __str__(self):
 		return 'Last downloaded page saved in "/tmp/kijiji-api-dump".'
@@ -102,7 +104,42 @@ class KijijiAPI:
 		name = os.path.basename(imagefile)
 
 		url = 'http://api-p.classistatic.com/api/image/upload'
-		self.images.append(imagefile)
+
+		fields = [('Filename', name), ('r', '0'),
+			('a', '1:913a6c0fec4f7a4f46321180f39d9e57ac9c8ff033971da0b9cfcccc45bef4e2'),
+			('v', 'k'), ('s', '1C5000'), ('n', 'k'), ('b', '18'),
+			('Upload', 'Submit Query')]
+		files = [('u', name, open(imagefile, 'rb'))]
+		content_type, body = multipartformdataencoder.MultipartFormdataEncoder().encode(fields, files)
+
+		headers = {'User-Agent': 'Shockwave Flash',
+			   'Connection': 'Keep-Alive',
+			   'Cache-Control': 'no-cache',
+			   'Accept': 'text/*',
+			   'Content-type': content_type}
+
+		o = urllib.parse.urlparse(url)
+
+		tryagain = 3
+		while tryagain > 0:
+			try:
+				conn = http.client.HTTPConnection(o.netloc)
+				conn.request('POST', o.path, body, headers)
+				response = conn.getresponse()
+				tryagain = -1
+			except ConnectionResetError:
+				print('Connection reset, trying again...')
+				tryagain -= 1
+		if tryagain == 0:
+			raise PostImageException()
+
+		page = response.read().decode('utf-8')
+		conn.close()
+
+		if response.status != 200 or not page:
+			raise PostImageException(str(response.status)+' '+response.reason)
+
+		self.images.append(page)
 
 	def post_ad(self, postvarsfile):
 		url = 'http://montreal.kijiji.ca/c-PostAd'
@@ -114,14 +151,11 @@ class KijijiAPI:
 			line = line.strip()
 			key = line[:line.index('=')]
 			val = line[line.index('=')+1:]
-
-			if key == 'Photo':
-				# TODO
-				print('TODO: post photo!')
-			elif key == 'Description':
+			if key == 'Description':
 				val = randomize_spaces(val)
-
 			postdata[key] = val
+		if self.images:
+			postdata['Photo'] = ','.join(self.images)
 		postvars.close()
 
 		params = urllib.parse.urlencode(postdata)
