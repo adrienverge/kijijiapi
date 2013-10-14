@@ -172,12 +172,26 @@ def main():
 
 	parser = argparse.ArgumentParser(
 		description='Robot to post ads on Kijiji.')
-	parser.add_argument('p', metavar='post-vars.txt',
-						help='file containing the POST vars')
-	parser.add_argument('-i', metavar='img1.jpg,img2.png',
-						help='images to join with the ad')
-	args = parser.parse_args()
+	subparsers = parser.add_subparsers(help='sub-command help')
 
+	parser_list = subparsers.add_parser('list', help='list ads currently displayed')
+	parser_list.set_defaults(func=main_list)
+
+	parser_post = subparsers.add_parser('post', help='post a new ad')
+	parser_post.set_defaults(func=main_post)
+	parser_post.add_argument('p', metavar='post-vars.txt',
+						help='file containing the POST vars')
+	parser_post.add_argument('-i', metavar='img1.jpg,img2.png',
+						help='images to join with the ad')
+
+	args = parser.parse_args()
+	args.func(args)
+
+def main_list(args):
+	print('[ ] lksfjlkdsj in...')
+	pass
+
+def main_post(args):
 	kijapi = KijijiAPI()
 
 	print('[ ] Signing in...')
