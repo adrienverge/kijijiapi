@@ -104,6 +104,10 @@ class SignInException(KijijiAPIException):
 	def __str__(self):
 		return 'Could not sign in.\n'+super().__str__()
 
+class ListAdsException(KijijiAPIException):
+	def __str__(self):
+		return 'Could not list ads.\n'+super().__str__()
+
 class PostImageException(KijijiAPIException):
 	def __str__(self):
 		return 'Could not post image.\n'+super().__str__()
@@ -154,6 +158,43 @@ class KijijiAPI:
 		if not 'Fermer la session' in page:
 			raise SignInException(page)
 
+	def list_ads(self):
+		url = 'http://montreal.kijiji.ca/c-ManageMyAds'
+
+		f = urllib.request.urlopen(url)
+		page = f.read().decode('utf-8')
+
+		try:
+			start = page.index('<table id="tableDefault"')
+			end = page.index('</table>', start)
+			table = page[start:end]
+		except ValueError:
+			raise ListAdsException(page)
+
+		ads = []
+		adend = 0
+
+		while True:
+			try:
+				adstart = table.index('<tr id="', adend)
+				adend = table.index('</tr>', adstart)
+			except ValueError:
+				break
+
+			tr = table[adstart:adend]
+
+			id = int(tr[8:tr.index('"', 8)])
+
+			aindex = tr.index('<a', tr.index('<td class="row" width="25%"'))
+			namestart = tr.index('>', aindex) + 1
+			nameend = tr.index('<', namestart)
+			name = tr[namestart:nameend]
+
+			ad = { 'id': id, 'name': name }
+			ads.append(ad)
+
+		return ads
+
 	def post_image(self, imagefile):
 		name = os.path.basename(imagefile)
 
@@ -164,7 +205,7 @@ class KijijiAPI:
 			('v', 'k'), ('s', '1C5000'), ('n', 'k'), ('b', '18'),
 			('Upload', 'Submit Query')]
 		files = [('u', name, open(imagefile, 'rb'))]
-		content_type, body = multipartformdataencoder.MultipartFormdataEncoder().encode(fields, files)
+		content_type, body = MultipartFormdataEncoder().encode(fields, files)
 
 		headers = {'User-Agent': 'Shockwave Flash',
 			   'Connection': 'Keep-Alive',
@@ -242,8 +283,19 @@ def main():
 	args.func(args)
 
 def main_list(args):
-	print('[ ] lksfjlkdsj in...')
-	pass
+	kijapi = KijijiAPI()
+
+	print('[ ] Signing in...')
+	kijapi.sign_in()
+
+	print('[ ] Listing ads...')
+	ads = kijapi.list_ads()
+
+	if not ads:
+		print('   No ad.')
+	else:
+		for ad in ads:
+			print('%d\t%s' % (ad['id'], ad['name']))
 
 def main_post(args):
 	kijapi = KijijiAPI()
