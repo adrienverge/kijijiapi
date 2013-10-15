@@ -3,7 +3,7 @@ Kijiji API
 
 Robot to post ads on Kijiji.
 
-This set of bash functions allow you to automatically post ads on
+This Python program allows you to automatically post ads on
 the [Kijiji] [1] advertisement community.
 Using a crontab, you can program it to post your ad regularly and make sure
 more users will see it.
@@ -32,7 +32,6 @@ PriceAlternative=1
 Price=20
 Title=Great bike
 Description=I'm selling my bike, it works great.<br><br>I also have a lock for it.
-Photo=$global_ad_images
 Email=my@email.com
 Phone=555-555-5555
 MapAddress=Montréal, QC, Canada
@@ -46,7 +45,7 @@ featuredAdDuration=0
 
 Then, use the following command to post your add:
 ```
-$ ./kijijiapi.py -i img1.jpg,img2.png post-vars.txt
+$ ./kijijiapi.py post -i img1.jpg,img2.png post-vars.txt
 ```
 assuming that your images to join with the ad are `img1.jpg` and `img2.png`,
 and your POST vars are in `post-vars.txt`.
