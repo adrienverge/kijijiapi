@@ -267,7 +267,8 @@ def main():
 
 	parser = argparse.ArgumentParser(
 		description='Robot to post ads on Kijiji.')
-	subparsers = parser.add_subparsers(help='sub-command help')
+	subparsers = parser.add_subparsers(title='subcommands',
+									   help='additional help')
 
 	parser_list = subparsers.add_parser('list', help='list ads currently displayed')
 	parser_list.set_defaults(func=main_list)
@@ -275,12 +276,15 @@ def main():
 	parser_post = subparsers.add_parser('post', help='post a new ad')
 	parser_post.set_defaults(func=main_post)
 	parser_post.add_argument('p', metavar='post-vars.txt',
-						help='file containing the POST vars')
+							 help='file containing the POST vars')
 	parser_post.add_argument('-i', metavar='img1.jpg,img2.png',
-						help='images to join with the ad')
+							 help='images to join with the ad')
 
 	args = parser.parse_args()
-	args.func(args)
+	try:
+		args.func(args)
+	except AttributeError:
+		parser.print_help()
 
 def main_list(args):
 	kijapi = KijijiAPI()
