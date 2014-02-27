@@ -50,6 +50,12 @@ $ ./kijijiapi.py post -i img1.jpg,img2.png post-vars.txt
 assuming that your images to join with the ad are `img1.jpg` and `img2.png`,
 and your POST vars are in `post-vars.txt`.
 
+Another way to include photos in your ad is to have them already posted on
+Kijiji and include their link in the POST vars file:
+```
+Photo=http://mypic1.jpg,http://$_18.JPG
+```
+
 If you want to list the ads you currently have on Kijiji, use:
 ```
 $ ./kijijiapi.py list

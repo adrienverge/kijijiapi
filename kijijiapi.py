@@ -219,10 +219,10 @@ class KijijiAPI:
 
 		url = 'http://api-p.classistatic.com/api/image/upload'
 
-		fields = [('Filename', name), ('r', '0'),
-			('a', '1:913a6c0fec4f7a4f46321180f39d9e57ac9c8ff033971da0b9cfcccc45bef4e2'),
-			('v', 'k'), ('s', '1C5000'), ('n', 'k'), ('b', '18'),
-			('Upload', 'Submit Query')]
+		token = self.get_eps_token()
+		fields = [('s', '1C5000'), ('v', '2'), ('b', '18'),
+				  ('n', 'k'), ('a', token)]
+
 		files = [('u', name, open(imagefile, 'rb'))]
 		content_type, body = MultipartFormdataEncoder().encode(fields, files)
 
@@ -250,7 +250,13 @@ class KijijiAPI:
 		page = response.read().decode('utf-8')
 		conn.close()
 
-		if response.status != 200 or not page:
+		if response.status == 303:
+			# Location contains someting like:
+			# http://api-p.classistatic.com/ws2/syi/EpsPostProcess.jsp?picurl=http://
+			url = response.getheader('Location')
+			f = urllib.request.urlopen(url)
+			page = url.split('picurl=')[1] #.split('?')[0]
+		elif response.status != 200 or not page:
 			raise PostImageException(str(response.status)+' '+response.reason+
 									 '\n\n'+page)
 
@@ -281,6 +287,15 @@ class KijijiAPI:
 
 		if not 'votre annonce est maintenant en ligne' in page:
 			raise PostAdException(page)
+
+	def get_eps_token(self):
+		url = 'https://secure.kijiji.ca/montreal/s-GetEpsToken'
+		f = urllib.request.urlopen(url)
+		page = f.read().decode('utf-8')
+
+		# Looks like '1:913a6c0fec4f7a4f46321180f39d9e57d01c370eb30721cfd2c249997756ab4d'
+		token = page.split("'")[1]
+		return token
 
 def main():
 	"""This is the entry point of the script."""
@@ -317,12 +332,13 @@ def main_list(args):
 		kijapi.sign_in()
 		print('done.')
 
-	print('[ ] Listing ads...')
+	print('[ ] Listing ads... ', end='')
 	ads = kijapi.list_ads()
 
 	if not ads:
-		print('   No ad.')
+		print('no ad.')
 	else:
+		print('')
 		for ad in ads:
 			print('%d\t%s' % (ad['id'], ad['name']))
 
@@ -346,10 +362,9 @@ def main_post(args):
 			print('[ ] Posting image "'+img+'"...')
 			kijapi.post_image(img)
 
-	print('[ ] Posting ad...')
+	print('[ ] Posting ad... ', end='')
 	kijapi.post_ad(args.p)
-
-	print('    Done!')
+	print('done!')
 
 	print('[ ] Saving new cookies...')
 	kijapi.save_cookies()
