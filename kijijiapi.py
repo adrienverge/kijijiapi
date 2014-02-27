@@ -117,19 +117,27 @@ class PostAdException(KijijiAPIException):
 		return 'Could not post ad.\n'+super().__str__()
 
 class KijijiAPI:
-	"""This is the main class.
-
-	"""
+	"""This is the main class."""
 
 	def __init__(self):
+		# Read config
 		config_file = os.path.dirname(__file__)+'/config.ini'
 		self.read_config(config_file)
 
-		cj = http.cookiejar.CookieJar()
-		opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+		# Handle cookies
+		cookiefile = self.config['account']['cookies']
+		self.cj = http.cookiejar.MozillaCookieJar(cookiefile)
+		try:
+			self.cj.load()
+		except FileNotFoundError:
+			pass
+
+		# Install HTTP context
+		opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cj))
 		opener.addheaders = [('User-agent', 'Mozilla/5.0')]
 		urllib.request.install_opener(opener)
 
+		# Init image list
 		self.images = []
 
 	def read_config(self, path):
@@ -140,22 +148,33 @@ class KijijiAPI:
 		   or self.config['account']['password'] == '':
 			raise Exception('No username or password in config file')
 
+	def save_cookies(self):
+		self.cj.save()
+
+	def is_signed_in(self, page=None):
+		if page == None:
+			url = 'http://montreal.kijiji.ca/'
+			f = urllib.request.urlopen(url)
+			page = f.read().decode('utf-8')
+
+		if page.find('<a href="http://montreal.kijiji.ca/c-SignOut"') >= 0:
+			return True
+
+		return False
+
 	def sign_in(self):
 		url = 'https://secure.kijiji.ca/montreal/s-SignIn'
 		params = urllib.parse.urlencode(
 			{'rup': '', 'ruq': '', 'AdId': 0, 'Mode': 'Normal',
 			 'GreetingName': self.config['account']['username'],
 			 'Password': self.config['account']['password'],
-			 'Submit': 'Ouvrir une session'})
+			 'KeepLoggedIn': 'checked', 'Submit': 'Ouvrir une session'})
 		params = params.encode('utf-8')
-
-		# First time for the cookies
-		f = urllib.request.urlopen(url)
 
 		f = urllib.request.urlopen(url, params)
 		page = f.read().decode('utf-8')
 
-		if not 'Fermer la session' in page:
+		if not self.is_signed_in(page):
 			raise SignInException(page)
 
 	def list_ads(self):
@@ -232,7 +251,8 @@ class KijijiAPI:
 		conn.close()
 
 		if response.status != 200 or not page:
-			raise PostImageException(str(response.status)+' '+response.reason)
+			raise PostImageException(str(response.status)+' '+response.reason+
+									 '\n\n'+page)
 
 		self.images.append(page)
 
@@ -289,8 +309,13 @@ def main():
 def main_list(args):
 	kijapi = KijijiAPI()
 
-	print('[ ] Signing in...')
-	kijapi.sign_in()
+	print('[ ] Connecting to Kijiji...')
+	if kijapi.is_signed_in():
+		print('[ ] Already signed in.')
+	else:
+		print('[ ] Signing in... ', end='')
+		kijapi.sign_in()
+		print('done.')
 
 	print('[ ] Listing ads...')
 	ads = kijapi.list_ads()
@@ -301,11 +326,19 @@ def main_list(args):
 		for ad in ads:
 			print('%d\t%s' % (ad['id'], ad['name']))
 
+	print('[ ] Saving new cookies...')
+	kijapi.save_cookies()
+
 def main_post(args):
 	kijapi = KijijiAPI()
 
-	print('[ ] Signing in...')
-	kijapi.sign_in()
+	print('[ ] Connecting to Kijiji...')
+	if kijapi.is_signed_in():
+		print('[ ] Already signed in.')
+	else:
+		print('[ ] Signing in... ', end='')
+		kijapi.sign_in()
+		print('done.')
 
 	if args.i:
 		images = args.i.split(',')
@@ -317,7 +350,9 @@ def main_post(args):
 	kijapi.post_ad(args.p)
 
 	print('    Done!')
-	sys.exit(0)
+
+	print('[ ] Saving new cookies...')
+	kijapi.save_cookies()
 
 if __name__ == "__main__":
 	main()
