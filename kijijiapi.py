@@ -116,6 +116,10 @@ class PostAdException(KijijiAPIException):
 	def __str__(self):
 		return 'Could not post ad.\n'+super().__str__()
 
+class DeleteAdException(KijijiAPIException):
+	def __str__(self):
+		return 'Could not delete ad.\n'+super().__str__()
+
 class KijijiAPI:
 	"""This is the main class."""
 
@@ -297,6 +301,16 @@ class KijijiAPI:
 		token = page.split("'")[1]
 		return token
 
+	def delete_ad(self, id):
+		url = 'http://montreal.kijiji.ca/c-ManageMyAds?RowId='+id
+		url += '&Action=DELETE_ADS&Mode=ACTIVE&SurveyResponse=7&SurveyResponseText='
+
+		f = urllib.request.urlopen(url)
+		page = f.read().decode('utf-8')
+
+		if not 'L\'annonce a été supprimée avec succès.' in page:
+			raise DeleteAdException(page)
+
 def main():
 	"""This is the entry point of the script."""
 
@@ -315,15 +329,18 @@ def main():
 	parser_post.add_argument('-i', metavar='img1.jpg,img2.png',
 							 help='images to join with the ad')
 
+	parser_post = subparsers.add_parser('delete', help='remove an existing ad')
+	parser_post.set_defaults(func=main_delete)
+	parser_post.add_argument('id', metavar='ID',
+							 help='ad identifier (e.g. 470957281)')
+
 	args = parser.parse_args()
 	try:
 		args.func(args)
 	except AttributeError:
 		parser.print_help()
 
-def main_list(args):
-	kijapi = KijijiAPI()
-
+def main_signin(kijapi):
 	print('[ ] Connecting to Kijiji...')
 	if kijapi.is_signed_in():
 		print('[ ] Already signed in.')
@@ -331,6 +348,15 @@ def main_list(args):
 		print('[ ] Signing in... ', end='')
 		kijapi.sign_in()
 		print('done.')
+
+def main_savecookies(kijapi):
+	print('[ ] Saving new cookies...')
+	kijapi.save_cookies()
+
+def main_list(args):
+	kijapi = KijijiAPI()
+
+	main_signin(kijapi)
 
 	print('[ ] Listing ads... ', end='')
 	ads = kijapi.list_ads()
@@ -342,19 +368,12 @@ def main_list(args):
 		for ad in ads:
 			print('%d\t%s' % (ad['id'], ad['name']))
 
-	print('[ ] Saving new cookies...')
-	kijapi.save_cookies()
+	main_savecookies(kijapi)
 
 def main_post(args):
 	kijapi = KijijiAPI()
 
-	print('[ ] Connecting to Kijiji...')
-	if kijapi.is_signed_in():
-		print('[ ] Already signed in.')
-	else:
-		print('[ ] Signing in... ', end='')
-		kijapi.sign_in()
-		print('done.')
+	main_signin(kijapi)
 
 	if args.i:
 		images = args.i.split(',')
@@ -366,8 +385,18 @@ def main_post(args):
 	kijapi.post_ad(args.p)
 	print('done!')
 
-	print('[ ] Saving new cookies...')
-	kijapi.save_cookies()
+	main_savecookies(kijapi)
+
+def main_delete(args):
+	kijapi = KijijiAPI()
+
+	main_signin(kijapi)
+
+	print('[ ] Removing ad %s... ' % args.id, end='')
+	kijapi.delete_ad(args.id)
+	print('done.')
+
+	main_savecookies(kijapi)
 
 if __name__ == "__main__":
 	main()
