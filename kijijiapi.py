@@ -253,52 +253,19 @@ class KijijiAPI:
 		return ads
 
 	def post_image(self, imagefile):
-		name = os.path.basename(imagefile)
-
 		url = 'https://www.kijiji.ca/p-upload-image.html'
+				
+		name = os.path.basename(imagefile)
+		fp = open(name, 'rb')
+		files = {'file': fp}	
+		f = requests.post(url, files=files)
+		data = f.json()
+		if 'OK' not in data:
+		    raise PostImageException(f.text)
+		fp.close()	
+		imgurl = data['thumbnailUrl']
+		self.images.append(imgurl)
 
-		#token = self.get_eps_token()
-		fields = [('s', '1C5000'), ('v', '2'), ('b', '18'),
-				  ('n', 'k')] #, ('a', token)]
-
-		files = [('u', name, open(imagefile, 'rb'))]
-		content_type, body = MultipartFormdataEncoder().encode(fields, files)
-
-		headers = {'User-Agent': 'Shockwave Flash',
-			   'Connection': 'Keep-Alive',
-			   'Cache-Control': 'no-cache',
-			   'Accept': 'text/*',
-			   'Content-type': content_type}
-
-		o = urllib.parse.urlparse(url)
-
-		tryagain = 3
-		while tryagain > 0:
-			try:
-				conn = http.client.HTTPConnection(o.netloc)
-				conn.request('POST', o.path, body, headers)
-				response = conn.getresponse()
-				tryagain = -1
-			except ConnectionResetError:
-				print('Connection reset, trying again...')
-				tryagain -= 1
-		if tryagain == 0:
-			raise PostImageException()
-
-		page = response.read().decode('utf-8')
-		conn.close()
-
-		if response.status == 303:
-			# Location contains someting like:
-			# http://api-p.classistatic.com/ws2/syi/EpsPostProcess.jsp?picurl=http://
-			url = response.getheader('Location')
-			f = urllib.request.urlopen(url)
-			page = url.split('picurl=')[1] #.split('?')[0]
-		elif response.status != 200 or not page:
-			raise PostImageException(str(response.status)+' '+response.reason+
-									 '\n\n'+page)
-
-		self.images.append(page)
 
 	def post_ad(self, postvarsfile):
 		url = 'https://www.kijiji.ca/p-submit-ad.html'
@@ -316,10 +283,8 @@ class KijijiAPI:
 				val = randomize_spaces(val)
 			postdata[key] = val
 		if self.images:
-			for img in self.images:
-				postdata['images'] = ','.join(img)
+			postdata['images'] = ','.join(self.images)
 		postvars.close()
-
 		postdata['ca.kijiji.xsrf.token'] = self.get_csrf_token('https://www.kijiji.ca/m-my-ads.html')
 
 		params = urllib.parse.urlencode(postdata)
