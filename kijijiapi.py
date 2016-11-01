@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # Copyright (C) 2013 Adrien Vergé
 
@@ -13,28 +13,37 @@ regularly and make sure more users will see it.
 """
 
 __author__ = "Adrien Vergé"
+__author_update__ = "Ravi Bhanabhai"
 __copyright__ = "Copyright 2013, Adrien Vergé"
 __license__ = "GPL"
-__version__ = "2.0"
+__version__ = "2.1"
+__date__ ="Q4 2016"
 
 import argparse
 import codecs
 import configparser
 import http.cookiejar
+import sqlite3
 import io
 import os
 import random
 import mimetypes
 import sys
+import requests
 import urllib.request
 import urllib.parse
+import json
+import ssl
+
+
+
 import uuid
 
 if sys.version_info < (3, 0):
 	raise Exception('This script is made for Python 3.0 or higher')
 
 def randomize_spaces(input):
-	words = input.split(' ')
+	words = input.split('+')
 	output = ''
 	for w in words:
 		output += ' '*(1+random.randrange(3))+w
@@ -120,10 +129,16 @@ class DeleteAdException(KijijiAPIException):
 	def __str__(self):
 		return 'Could not delete ad.\n'+super().__str__()
 
+class csrfTokenException(KijijiAPIException):
+	def __str__(self):
+		return 'Could not get csrf token.\n'+super().__str__()
+
+
 class KijijiAPI:
 	"""This is the main class."""
 
 	def __init__(self):
+
 		# Read config
 		config_file = os.path.dirname(__file__)+'/config.ini'
 		self.read_config(config_file)
@@ -134,11 +149,14 @@ class KijijiAPI:
 		try:
 			self.cj.load()
 		except FileNotFoundError:
-			pass
+			self.load_browser_cookies()
+			self.save_cookies()
+			print("loaded Browser Cookies")
 
 		# Install HTTP context
-		opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cj))
-		opener.addheaders = [('User-agent', 'Mozilla/5.0')]
+		opener = urllib.request.build_opener(urllib.request.HTTPRedirectHandler(), urllib.request.HTTPCookieProcessor(self.cj))
+		opener.addheaders = [('User-agent', 'Mozilla/5.0 (X11; U; Linux i686) Gecko/20071127 Firefox/2.0.0.11'),
+							('Connection', 'keep-alive')]
 		urllib.request.install_opener(opener)
 
 		# Init image list
@@ -148,72 +166,88 @@ class KijijiAPI:
 		self.config = configparser.ConfigParser()
 		self.config.read(path)
 		if (not 'account' in self.config) \
-		   or self.config['account']['username'] == '' \
-		   or self.config['account']['password'] == '':
-			raise Exception('No username or password in config file')
+		   or self.config['account']['cookies'] == '':
+			raise Exception('No cookies in config file')
+
+	def load_browser_cookies(self):
+
+			browser_type = self.config['account']['browser']
+			cookie_location = self.config['account']['browser_cookies']
+			
+			#Retrieve Firefox Cookies
+			con = sqlite3.connect(cookie_location)
+			cur = con.cursor()
+			cur.execute("SELECT host, path, isSecure, expiry, name, value FROM moz_cookies WHERE baseDomain = 'kijiji.ca' ")
+
+			for item in cur.fetchall():
+				c = http.cookiejar.Cookie(0, item[4], item[5],
+					None, False,
+					item[0], item[0].startswith('.'), item[0].startswith('.'),
+					item[1], False,
+					item[2],
+					item[3], item[3]=="",
+					None, None, {})
+				self.cj.set_cookie(c)
 
 	def save_cookies(self):
 		self.cj.save()
 
 	def is_signed_in(self, page=None):
 		if page == None:
-			url = 'http://montreal.kijiji.ca/'
+			url = 'https://www.kijiji.ca/'
 			f = urllib.request.urlopen(url)
 			page = f.read().decode('utf-8')
 
-		if page.find('<a href="http://montreal.kijiji.ca/c-SignOut"') >= 0:
+		if page.find('<a href="/m-my-ads.html"') >= 0:
 			return True
 
 		return False
 
 	def sign_in(self):
-		url = 'https://secure.kijiji.ca/montreal/s-SignIn'
-		params = urllib.parse.urlencode(
-			{'rup': '', 'ruq': '', 'AdId': 0, 'Mode': 'Normal',
-			 'GreetingName': self.config['account']['username'],
-			 'Password': self.config['account']['password'],
-			 'KeepLoggedIn': 'checked', 'Submit': 'Ouvrir une session'})
-		params = params.encode('utf-8')
 
-		f = urllib.request.urlopen(url, params)
+		#----------------
+		# depreciated 
+		#----------------
+
+		url = 'https://www.kijiji.ca/'
+		f = urllib.request.urlopen(url)
+#		print( f.info().headers )
 		page = f.read().decode('utf-8')
 
 		if not self.is_signed_in(page):
 			raise SignInException(page)
 
 	def list_ads(self):
-		url = 'http://montreal.kijiji.ca/c-ManageMyAds'
-
+		
+		url = 'https://www.kijiji.ca/m-my-ads.html'
 		f = urllib.request.urlopen(url)
 		page = f.read().decode('utf-8')
-
 		try:
-			start = page.index('<table id="tableDefault"')
-			end = page.index('</table>', start)
-			table = page[start:end]
+			id_start = page.index(', userId:') + 11
+			id_end = id_start + 19
+			userID = page[id_start:id_end]
 		except ValueError:
 			raise ListAdsException(page)
 
-		ads = []
-		adend = 0
+		url = 'https://www.kijiji.ca/j-get-my-ads.json?show=ACTIVE&user='+userID
+		f = urllib.request.urlopen(url)
+		page = f.read().decode('utf-8')   
+		data = json.loads(page)
 
-		while True:
+		ads = []
+
+		for fullad in data['myAdEntries']:
 			try:
-				adstart = table.index('<tr id="', adend)
-				adend = table.index('</tr>', adstart)
+				ad = {
+				 'id': fullad['id'],
+				 'title': fullad['title'],
+				 'price': fullad['price'],
+				 'page': fullad['pageNumber'],
+				 'counter': fullad['viewCounter']
+				 }
 			except ValueError:
 				break
 
-			tr = table[adstart:adend]
-
-			id = int(tr[8:tr.index('"', 8)])
-
-			aindex = tr.index('<a', tr.index('<td class="row" width="25%"'))
-			namestart = tr.index('>', aindex) + 1
-			nameend = tr.index('<', namestart)
-			name = tr[namestart:nameend]
-
-			ad = { 'id': id, 'name': name }
 			ads.append(ad)
 
 		return ads
@@ -221,11 +255,11 @@ class KijijiAPI:
 	def post_image(self, imagefile):
 		name = os.path.basename(imagefile)
 
-		url = 'http://api-p.classistatic.com/api/image/upload'
+		url = 'https://www.kijiji.ca/p-upload-image.html'
 
-		token = self.get_eps_token()
+		#token = self.get_eps_token()
 		fields = [('s', '1C5000'), ('v', '2'), ('b', '18'),
-				  ('n', 'k'), ('a', token)]
+				  ('n', 'k')] #, ('a', token)]
 
 		files = [('u', name, open(imagefile, 'rb'))]
 		content_type, body = MultipartFormdataEncoder().encode(fields, files)
@@ -267,21 +301,26 @@ class KijijiAPI:
 		self.images.append(page)
 
 	def post_ad(self, postvarsfile):
-		url = 'http://montreal.kijiji.ca/c-PostAd'
+		url = 'https://www.kijiji.ca/p-submit-ad.html'
 
 		postdata = {}
 
 		postvars = open(postvarsfile, 'rt')
 		for line in postvars:
 			line = line.strip()
+			if '=' not in line:
+				continue
 			key = line[:line.index('=')]
 			val = line[line.index('=')+1:]
-			if key == 'Description':
+			if key == 'postAdForm.description' or key == 'postAdForm.title':
 				val = randomize_spaces(val)
 			postdata[key] = val
 		if self.images:
-			postdata['Photo'] = ','.join(self.images)
+			for img in self.images:
+				postdata['images'] = ','.join(img)
 		postvars.close()
+
+		postdata['ca.kijiji.xsrf.token'] = self.get_csrf_token('https://www.kijiji.ca/m-my-ads.html')
 
 		params = urllib.parse.urlencode(postdata)
 		params = params.encode('utf-8')
@@ -289,11 +328,11 @@ class KijijiAPI:
 		f = urllib.request.urlopen(url, params)
 		page = f.read().decode('utf-8')
 
-		if not 'votre annonce est maintenant en ligne' in page:
+		if not "My Ad's status" in page:
 			raise PostAdException(page)
 
 	def get_eps_token(self):
-		url = 'https://secure.kijiji.ca/montreal/s-GetEpsToken'
+		url = 'https://secure.kijiji.ca/toronto/s-GetEpsToken'
 		f = urllib.request.urlopen(url)
 		page = f.read().decode('utf-8')
 
@@ -301,14 +340,44 @@ class KijijiAPI:
 		token = page.split("'")[1]
 		return token
 
-	def delete_ad(self, id):
-		url = 'http://montreal.kijiji.ca/c-ManageMyAds?RowId='+id
-		url += '&Action=DELETE_ADS&Mode=ACTIVE&SurveyResponse=7&SurveyResponseText='
-
+	def get_csrf_token(self, site):
+		url = site
 		f = urllib.request.urlopen(url)
 		page = f.read().decode('utf-8')
 
-		if not 'L\'annonce a été supprimée avec succès.' in page:
+		startWord = 'name="ca.kijiji.xsrf.token" value="'
+		token=""
+		try:
+			index = page.index(startWord) + len(startWord)
+			while(1):
+				if( page[index] == '"' or index == 100 ):
+					break
+				token += page[index]
+				index += 1
+
+		except ValueError:
+			raise csrfTokenException(page)
+
+		return token
+
+	def delete_ad(self, id):
+
+		url = 'https://www.kijiji.ca/j-delete-ad.json'
+
+		postdata = {}
+		postdata['Action'] = 'DELETE_ADS'
+		postdata['Mode'] = 'ACTIVE'
+		postdata['needsRedirect'] = 'false'
+		postdata['ads'] = '[{"adId":"'+id+'","reason":"PREFER_NOT_TO_SAY","otherReason":""}]'
+		postdata['ca.kijiji.xsrf.token'] = self.get_csrf_token('https://www.kijiji.ca/m-my-ads.html')
+
+		params = urllib.parse.urlencode(postdata)
+		params = params.encode('utf-8')
+
+		f = urllib.request.urlopen(url, params)
+		page = f.read().decode('utf-8')
+
+		if not 'has been successfully deleted.' in page:
 			raise DeleteAdException(page)
 
 def main():
@@ -366,7 +435,7 @@ def main_list(args):
 	else:
 		print('')
 		for ad in ads:
-			print('%d\t%s' % (ad['id'], ad['name']))
+			print('\t*%s\t%s\t$%s\tviews:%s\tpage:%s' % (ad['id'], ad['title'], ad['price'], ad['counter'], ad['page']))
 
 	main_savecookies(kijapi)
 
