@@ -15,8 +15,9 @@ Disclaimer
 
 This script has been reported not to work anymore, because of changes on Kijiji.
 
-You may be interested in this more recent script:
-[KijijiBotV2](https://github.com/guoarthur/KijijiBotV2).
+This version from github.com/raviolli works for the following commands:
+
+List, Delete, Upload (w/o images)
 
 Usage
 -----
