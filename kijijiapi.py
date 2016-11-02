@@ -35,8 +35,6 @@ import urllib.parse
 import json
 import ssl
 
-
-
 import uuid
 
 if sys.version_info < (3, 0):
@@ -48,57 +46,6 @@ def randomize_spaces(input):
 	for w in words:
 		output += ' '*(1+random.randrange(3))+w
 	return output
-
-class MultipartFormdataEncoder(object):
-	"""Class to HTTP POST multipart/form-data encoded data
-
-	Taken from http://stackoverflow.com/questions/1270518
-
-	"""
-	def __init__(self):
-		self.boundary = uuid.uuid4().hex
-		self.content_type = 'multipart/form-data; boundary={}'.format(self.boundary)
-
-	@classmethod
-	def u(cls, s):
-		if isinstance(s, bytes):
-			s = s.decode('utf-8')
-		return s
-
-	def iter(self, fields, files):
-		"""
-		fields is a sequence of (name, value) elements for regular form fields.
-		files is a sequence of (name, filename, file-type) elements for data to be uploaded as files
-		Yield body's chunk as bytes
-		"""
-		encoder = codecs.getencoder('utf-8')
-		for (key, value) in fields:
-			key = self.u(key)
-			yield encoder('--{}\r\n'.format(self.boundary))
-			yield encoder(self.u('Content-Disposition: form-data; name="{}"\r\n').format(key))
-			yield encoder('\r\n')
-			if isinstance(value, int) or isinstance(value, float):
-				value = str(value)
-			yield encoder(self.u(value))
-			yield encoder('\r\n')
-		for (key, filename, fd) in files:
-			key = self.u(key)
-			filename = self.u(filename)
-			yield encoder('--{}\r\n'.format(self.boundary))
-			yield encoder(self.u('Content-Disposition: form-data; name="{}"; filename="{}"\r\n').format(key, filename))
-			yield encoder('Content-Type: {}\r\n'.format(mimetypes.guess_type(filename)[0] or 'application/octet-stream'))
-			yield encoder('\r\n')
-			with fd:
-				buff = fd.read()
-				yield (buff, len(buff))
-			yield encoder('\r\n')
-		yield encoder('--{}--\r\b'.format(self.boundary))
-
-	def encode(self, fields, files):
-		body = io.BytesIO()
-		for chunk, chunk_len in self.iter(fields, files):
-			body.write(chunk)
-		return self.content_type, body.getvalue()
 
 class KijijiAPIException(Exception):
 	def __init__(self, dump=None):
@@ -149,9 +96,7 @@ class KijijiAPI:
 		try:
 			self.cj.load()
 		except FileNotFoundError:
-			self.load_browser_cookies()
-			self.save_cookies()
-			print("loaded Browser Cookies")
+			pass
 
 		# Install HTTP context
 		opener = urllib.request.build_opener(urllib.request.HTTPRedirectHandler(), urllib.request.HTTPCookieProcessor(self.cj))
@@ -166,28 +111,9 @@ class KijijiAPI:
 		self.config = configparser.ConfigParser()
 		self.config.read(path)
 		if (not 'account' in self.config) \
-		   or self.config['account']['cookies'] == '':
-			raise Exception('No cookies in config file')
-
-	def load_browser_cookies(self):
-
-			browser_type = self.config['account']['browser']
-			cookie_location = self.config['account']['browser_cookies']
-			
-			#Retrieve Firefox Cookies
-			con = sqlite3.connect(cookie_location)
-			cur = con.cursor()
-			cur.execute("SELECT host, path, isSecure, expiry, name, value FROM moz_cookies WHERE baseDomain = 'kijiji.ca' ")
-
-			for item in cur.fetchall():
-				c = http.cookiejar.Cookie(0, item[4], item[5],
-					None, False,
-					item[0], item[0].startswith('.'), item[0].startswith('.'),
-					item[1], False,
-					item[2],
-					item[3], item[3]=="",
-					None, None, {})
-				self.cj.set_cookie(c)
+		   or self.config['account']['username'] == '' \
+		   or self.config['account']['password'] == '':
+			raise Exception('No username or password in config file')
 
 	def save_cookies(self):
 		self.cj.save()
@@ -205,13 +131,17 @@ class KijijiAPI:
 
 	def sign_in(self):
 
-		#----------------
-		# depreciated 
-		#----------------
+		url = 'https://www.kijiji.ca/t-login.html'
 
-		url = 'https://www.kijiji.ca/'
-		f = urllib.request.urlopen(url)
-#		print( f.info().headers )
+		params = urllib.parse.urlencode(
+		{'ca.kijiji.xsrf.token': self.get_csrf_token(url),
+		 'targetUrl': self.get_target_key(url),
+		 'emailOrNickname': self.config['account']['username'],
+		 'password': self.config['account']['password'],
+		 'rememberMe': 'true', '_rememberMe': 'on'})
+		params = params.encode('utf-8')
+
+		f = urllib.request.urlopen(url, params)
 		page = f.read().decode('utf-8')
 
 		if not self.is_signed_in(page):
@@ -296,13 +226,23 @@ class KijijiAPI:
 		if not "My Ad's status" in page:
 			raise PostAdException(page)
 
-	def get_eps_token(self):
-		url = 'https://secure.kijiji.ca/toronto/s-GetEpsToken'
+	def get_target_key(self, site):
+		url = site
 		f = urllib.request.urlopen(url)
 		page = f.read().decode('utf-8')
+		htmlid = 'name="targetUrl" type="hidden" value="'
 
-		# Looks like '1:913a6c0fec4f7a4f46321180f39d9e57d01c370eb30721cfd2c249997756ab4d'
-		token = page.split("'")[1]
+		token=""
+		try:
+			index = page.index(htmlid) + len(htmlid)
+			while(1):
+				if( page[index] == '"' or index == 50 ):
+					break
+				token += page[index]
+				index += 1
+		except ValueError:
+			raise csrfTokenException(page)
+
 		return token
 
 	def get_csrf_token(self, site):
@@ -310,7 +250,7 @@ class KijijiAPI:
 		f = urllib.request.urlopen(url)
 		page = f.read().decode('utf-8')
 
-		startWord = 'name="ca.kijiji.xsrf.token" value="'
+		startWord = 'token:  "'
 		token=""
 		try:
 			index = page.index(startWord) + len(startWord)
