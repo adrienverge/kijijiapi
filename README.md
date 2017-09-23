@@ -10,21 +10,10 @@ more users will see it.
 
 [1]: http://www.kijiji.ca/  "Kijiji"
 
-Disclaimer
-----------
-
-This script has been reported not to work anymore, because of changes on Kijiji.
-
-This version from github.com/raviolli works for the following commands:
-
-List, Delete, Upload
-
 Usage
 -----
 
-First, store your Cookie Path into `config.ini` file. At the moment it is only tested on Firefox.  
-
-//First, store your Kijiji account username and password into the `config.ini` file.
+First, store your Kijiji account username and password into the `config.ini` file.
 
 To configure the script to post a specific ad, you need to post it once on
 Kijiji and save the POST vars sent by your browser when posting:

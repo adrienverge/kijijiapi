@@ -1,15 +1,12 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (C) 2013 Adrien Vergé
 
 """Kijiji API
-
 Robot to post ads on Kijiji.
-
 This set of bash functions allow you to automatically post ads on the Kijiji
 advertisement community. Using a crontab, you can program it to post your ad
 regularly and make sure more users will see it.
-
 """
 
 __author__ = "Adrien Vergé"
@@ -76,9 +73,9 @@ class DeleteAdException(KijijiAPIException):
 	def __str__(self):
 		return 'Could not delete ad.\n'+super().__str__()
 
-class csrfTokenException(KijijiAPIException):
+class TokenException(KijijiAPIException):
 	def __str__(self):
-		return 'Could not get csrf token.\n'+super().__str__()
+		return 'Could not get token.\n'+super().__str__()
 
 
 class KijijiAPI:
@@ -124,7 +121,7 @@ class KijijiAPI:
 			f = urllib.request.urlopen(url)
 			page = f.read().decode('utf-8')
 
-		if page.find('<a href="/m-my-ads.html"') >= 0:
+		if page.find('<a href="/m-my-ads') >= 0:
 			return True
 
 		return False
@@ -134,7 +131,7 @@ class KijijiAPI:
 		url = 'https://www.kijiji.ca/t-login.html'
 
 		params = urllib.parse.urlencode(
-		{'ca.kijiji.xsrf.token': self.get_csrf_token(url),
+		{'ca.kijiji.xsrf.token': self.get_xsrf_token(url),
 		 'targetUrl': self.get_target_key(url),
 		 'emailOrNickname': self.config['account']['username'],
 		 'password': self.config['account']['password'],
@@ -153,13 +150,13 @@ class KijijiAPI:
 		f = urllib.request.urlopen(url)
 		page = f.read().decode('utf-8')
 		try:
-			id_start = page.index(', userId:') + 11
-			id_end = id_start + 19
+			id_start = page.index("userId:") + len("userId:") +2
+			id_end = id_start + 8
 			userID = page[id_start:id_end]
 		except ValueError:
 			raise ListAdsException(page)
 
-		url = 'https://www.kijiji.ca/j-get-my-ads.json?show=ACTIVE&user='+userID
+		url = 'https://www.kijiji.ca/j-get-my-ads.json?_=&currentOffset=0&show=ACTIVE&user='+userID
 		f = urllib.request.urlopen(url)
 		page = f.read().decode('utf-8')   
 		data = json.loads(page)
@@ -215,12 +212,14 @@ class KijijiAPI:
 		if self.images:
 			postdata['images'] = ','.join(self.images)
 		postvars.close()
-		postdata['ca.kijiji.xsrf.token'] = self.get_csrf_token('https://www.kijiji.ca/m-my-ads.html')
+		postdata['ca.kijiji.xsrf.token'] = self.get_xsrf_token('https://www.kijiji.ca/m-my-ads.html')
+		#postdata['postAdForm.fraudToken'] = self.get_fraud_token(postdata, 'https://www.kijiji.ca/p-submit-ad.html')
 
 		params = urllib.parse.urlencode(postdata)
 		params = params.encode('utf-8')
 
 		f = urllib.request.urlopen(url, params)
+
 		page = f.read().decode('utf-8')
 
 		if not "My Ad's status" in page:
@@ -241,19 +240,20 @@ class KijijiAPI:
 				token += page[index]
 				index += 1
 		except ValueError:
-			raise csrfTokenException(page)
+			raise TokenException(page)
 
 		return token
 
-	def get_csrf_token(self, site):
+	def get_xsrf_token(self, site):
 		url = site
 		f = urllib.request.urlopen(url)
 		page = f.read().decode('utf-8')
+		#htmlid = 'name="ca.kijiji.xsrf.token" value="'
+		htmlid = 'token: "'
 
-		startWord = 'token:  "'
 		token=""
 		try:
-			index = page.index(startWord) + len(startWord)
+			index = page.index(htmlid) + len(htmlid)
 			while(1):
 				if( page[index] == '"' or index == 100 ):
 					break
@@ -261,7 +261,30 @@ class KijijiAPI:
 				index += 1
 
 		except ValueError:
-			raise csrfTokenException(page)
+			raise TokenException(page)
+
+		return token
+
+	def get_fraud_token(self, data, site):
+		url = site
+		postdata = data
+		params = urllib.parse.urlencode(postdata)
+		params = params.encode('utf-8')
+		f = urllib.request.urlopen(url, params)
+		page = f.read().decode('utf-8')
+		htmlid = 'id="ca.kijiji.fraud.token" name="postAdForm.fraudToken" value="'
+
+		token=""
+		try:
+			index = page.index(htmlid) + len(htmlid)
+			while(1):
+				if( page[index] == '"' or index == 100 ):
+					break
+				token += page[index]
+				index += 1
+
+		except ValueError:
+			raise TokenException(page)
 
 		return token
 
@@ -274,7 +297,7 @@ class KijijiAPI:
 		postdata['Mode'] = 'ACTIVE'
 		postdata['needsRedirect'] = 'false'
 		postdata['ads'] = '[{"adId":"'+id+'","reason":"PREFER_NOT_TO_SAY","otherReason":""}]'
-		postdata['ca.kijiji.xsrf.token'] = self.get_csrf_token('https://www.kijiji.ca/m-my-ads.html')
+		postdata['ca.kijiji.xsrf.token'] = self.get_xsrf_token('https://www.kijiji.ca/m-my-ads.html')
 
 		params = urllib.parse.urlencode(postdata)
 		params = params.encode('utf-8')
@@ -284,6 +307,7 @@ class KijijiAPI:
 
 		if not 'has been successfully deleted.' in page:
 			raise DeleteAdException(page)
+
 
 def main():
 	"""This is the entry point of the script."""
