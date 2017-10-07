@@ -10,14 +10,6 @@ more users will see it.
 
 [1]: http://www.kijiji.ca/  "Kijiji"
 
-Disclaimer
-----------
-
-This script has been reported not to work anymore, because of changes on Kijiji.
-
-You may be interested in this more recent script:
-[KijijiBotV2](https://github.com/guoarthur/KijijiBotV2).
-
 Usage
 -----
 
